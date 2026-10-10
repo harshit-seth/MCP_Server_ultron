@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP console</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #EEF2F5;
+    --panel: #F8FAFB;
+    --ink: #13233A;
+    --muted: #566679;
+    --line: #C5D0DB;
+    --accent: #0B7A83;
+    --accent-ink: #FFFFFF;
+    --accent-weak: #D5ECEE;
+    --danger: #B3261E;
+    --danger-weak: #F9E2E0;
+    --ok: #1E7A4C;
+    --warn: #8A5A00;
+    --code: #E4EAF0;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E1923;
+      --panel: #132230;
+      --ink: #E3ECF4;
+      --muted: #92A3B6;
+      --line: #27394B;
+      --accent: #55C2CB;
+      --accent-ink: #06242A;
+      --accent-weak: #16353C;
+      --danger: #FF8A80;
+      --danger-weak: #3A1D1B;
+      --ok: #6FD39B;
+      --warn: #E5B454;
+      --code: #0A131B;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 var(--sans);
+    min-height: 100vh;
+  }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 600; margin: 0; }
+  h2 { font-size: 1.6rem; line-height: 1.2; }
+  h3 { font-size: 1.05rem; }
+  p { margin: 0; }
+  .muted { color: var(--muted); }
+  code, pre, .mono { font-family: var(--mono); font-size: 13px; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* top bar */
+  .top {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 12px 24px; padding: 14px 24px; border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .brand h1 { font-size: 1.5rem; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+    padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px;
+  }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill[data-state="up"]::before { background: var(--ok); }
+  .pill[data-state="down"]::before { background: var(--danger); }
+  .endpoint { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .endpoint label { color: var(--muted); font-size: 13px; }
+
+  /* controls */
+  input[type="text"], input[type="number"], textarea {
+    font: inherit; color: inherit; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 4px; padding: 7px 10px; width: 100%;
+  }
+  textarea { font-family: var(--mono); font-size: 13px; resize: vertical; }
+  input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--danger); }
+  .endpoint input { width: 260px; font-family: var(--mono); font-size: 13px; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .6; cursor: progress; }
+
+  /* layout */
+  .layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: calc(100vh - 66px); }
+  .catalog { border-right: 1px solid var(--line); padding: 16px 0; }
+  .group-title { padding: 6px 24px; color: var(--muted); font-size: 13px; }
+  .catalog ul { list-style: none; margin: 0 0 12px; padding: 0; }
+  .catalog button {
+    display: block; width: 100%; text-align: left; border: 0; border-radius: 0;
+    background: none; padding: 8px 24px; border-left: 3px solid transparent;
+  }
+  .catalog button .name { font-family: var(--mono); font-size: 13px; }
+  .catalog button[aria-current="true"] { background: var(--accent-weak); border-left-color: var(--accent); }
+  .catalog .empty { padding: 4px 24px; color: var(--muted); font-size: 13px; }
+  .bench { padding: 24px 32px 48px; max-width: 1100px; }
+  .bench > * + * { margin-top: 20px; }
+
+  /* form */
+  .fields { display: grid; gap: 14px; max-width: 560px; }
+  .field label { display: block; font-weight: 600; margin-bottom: 4px; }
+  .field .req { color: var(--warn); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  .field .hint { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .field .inline { display: flex; align-items: center; gap: 8px; }
+  .field .inline input { width: auto; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .status { min-height: 1.5em; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--danger); }
+
+  /* results */
+  .banner { padding: 10px 14px; border-left: 4px solid var(--danger); background: var(--danger-weak); }
+  .banner strong { font-family: var(--mono); font-size: 13px; }
+  .hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  .hits a { color: var(--accent); font-weight: 600; word-break: break-word; }
+  .hits .src { color: var(--muted); font-size: 13px; }
+  .page-text {
+    max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    border: 1px solid var(--line); border-radius: 4px; padding: 12px; background: var(--panel);
+  }
+  pre {
+    margin: 0; padding: 12px; background: var(--code); border-radius: 4px;
+    overflow: auto; max-height: 360px; white-space: pre-wrap; word-break: break-word;
+  }
+  .wire { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .wire h3 { margin-bottom: 6px; }
+  .wire .meta { color: var(--muted); font-size: 13px; font-family: var(--sans); font-weight: 400; margin-left: 8px; }
+
+  /* history */
+  .history { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line); }
+  .history li { border-bottom: 1px solid var(--line); }
+  .history button {
+    display: flex; gap: 16px; width: 100%; border: 0; background: none; border-radius: 0;
+    padding: 8px 4px; text-align: left;
+  }
+  .history .when { color: var(--muted); font-size: 13px; min-width: 70px; }
+  .history .label { flex: 1; font-family: var(--mono); font-size: 13px; }
+  .history .ok { color: var(--ok); }
+  .history .err { color: var(--danger); }
+
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; }
+    .catalog { border-right: 0; border-bottom: 1px solid var(--line); }
+    .wire { grid-template-columns: 1fr; }
+    .bench { padding: 20px 16px 40px; }
+    .top { padding: 12px 16px; }
+    .endpoint input { width: 100%; }
+    .endpoint { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1 id="server-name">MCP console</h1>
+    <span id="server-version" class="muted"></span>
+    <span id="health" class="pill" data-state="checking">Checking server</span>
+  </div>
+  <form id="endpoint-form" class="endpoint">
+    <label for="endpoint">MCP endpoint</label>
+    <input id="endpoint" type="text" value="/api/mcp" spellcheck="false" autocomplete="off">
+    <button type="submit">Reconnect</button>
+  </form>
+</header>
+
+<div class="layout">
+  <nav class="catalog" id="catalog" aria-label="Server capabilities"></nav>
+  <main class="bench" id="bench"></main>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const state = {
+    endpoint: '/api/mcp',
+    nextId: 1,
+    tools: [], resources: [], prompts: [],
+    selected: null,
+    history: [],
+    info: null,
+    errors: {},
+    wire: null,
+  };
+
+  /* ---------- tiny DOM helper: always uses textContent, never innerHTML ---------- */
+  function el(tag, attrs = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      if (value === false || value == null) continue;
+      if (key === 'class') node.className = value;
+      else if (key === 'text') node.textContent = value;
+      else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? '' : value);
+    }
+    for (const child of children.flat()) if (child != null) node.append(child);
+    return node;
+  }
+  const pretty = (value) => (typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+
+  /* ---------- JSON-RPC over streamable HTTP ---------- */
+  async function rpc(method, params) {
+    const id = state.nextId++;
+    const request = { jsonrpc: '2.0', id, method };
+    if (params !== undefined) request.params = params;
+
+    const started = performance.now();
+    let response, raw;
+    try {
+      response = await fetch(state.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+        body: JSON.stringify(request),
+      });
+      raw = await response.text();
+    } catch {
+      throw new Error(`Could not reach ${state.endpoint}. Check that the server is running.`);
+    }
+    const ms = Math.round(performance.now() - started);
+
+    let message = null;
+    const type = response.headers.get('content-type') || '';
+    try {
+      if (type.includes('text/event-stream')) {
+        for (const line of raw.split(/\r?\n/)) {
+          if (!line.startsWith('data:')) continue;
+          const parsed = JSON.parse(line.slice(5).trim());
+          if (parsed.id === id) message = parsed;
+        }
+      } else {
+        message = JSON.parse(raw);
+      }
+    } catch { /* falls through to the error below */ }
+    if (!message) throw new Error(`HTTP ${response.status}: ${raw.slice(0, 200) || 'empty response'}`);
+    return { request, message, ms, status: response.status };
+  }
+
+  /* ---------- connection ---------- */
+  async function checkHealth() {
+    const pill = document.getElementById('health');
+    pill.dataset.state = 'checking';
+    pill.textContent = 'Checking server';
+    try {
+      const url = new URL('/api/healthz', new URL(state.endpoint, location.href));
+      const res = await fetch(url);
+      const body = await res.json();
+      const up = res.ok && body.status === 'ok';
+      pill.dataset.state = up ? 'up' : 'down';
+      pill.textContent = up ? 'Server healthy' : 'Server unhealthy';
+    } catch {
+      pill.dataset.state = 'down';
+      pill.textContent = 'Server unreachable';
+    }
+  }
+
+  async function connect() {
+    state.endpoint = document.getElementById('endpoint').value.trim() || '/api/mcp';
+    state.tools = []; state.resources = []; state.prompts = [];
+    state.selected = null; state.info = null; state.errors = {}; state.wire = null;
+    checkHealth();
+
+    try {
+      const init = await rpc('initialize', {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'mcp-console', version: '0.1.0' },
+      });
+      if (init.message.result) {
+        state.info = init.message.result;
+        const info = state.info.serverInfo || {};
+        document.getElementById('server-name').textContent = info.name || 'MCP console';
+        document.getElementById('server-version').textContent = info.version ? 'v' + info.version : '';
+      }
+    } catch (error) {
+      state.errors.initialize = error.message;
+    }
+
+    const [tools, resources, prompts] = await Promise.allSettled([
+      rpc('tools/list'), rpc('resources/list'), rpc('prompts/list'),
+    ]);
+    const take = (settled, key, listName) => {
+      if (settled.status === 'rejected') { state.errors[key] = settled.reason.message; return []; }
+      const { message } = settled.value;
+      if (message.error) { state.errors[key] = message.error.message; return []; }
+      return message.result[listName] || [];
+    };
+    state.tools = take(tools, 'tools', 'tools');
+    state.resources = take(resources, 'resources', 'resources');
+    state.prompts = take(prompts, 'prompts', 'prompts');
+    renderCatalog();
+    renderBench();
+  }
+
+  /* ---------- catalog ---------- */
+  function renderCatalog() {
+    const nav = document.getElementById('catalog');
+    nav.replaceChildren();
+    const sections = [
+      ['tool', 'Tools', state.tools, (t) => t.name],
+      ['resource', 'Resources', state.resources, (r) => r.name || r.uri],
+      ['prompt', 'Prompts', state.prompts, (p) => p.name],
+    ];
+    nav.append(el('button', {
+      type: 'button', 'aria-current': state.selected === null ? 'true' : false,
+      onclick: () => select(null),
+    }, el('span', { text: 'Server overview' })));
+
+    for (const [kind, title, items, labelOf] of sections) {
+      nav.append(el('div', { class: 'group-title', text: `${title} (${items.length})` }));
+      if (!items.length) {
+        nav.append(el('p', { class: 'empty', text: state.errors[kind + 's'] ? 'Could not load' : 'None exposed' }));
+        continue;
+      }
+      nav.append(el('ul', {}, items.map((item) => el('li', {},
+        el('button', {
+          type: 'button',
+          'aria-current': state.selected && state.selected.item === item ? 'true' : false,
+          onclick: () => select({ kind, item }),
+        }, el('span', { class: 'name', text: labelOf(item) }))
+      ))));
+    }
+  }
+
+  function select(selection) {
+    state.selected = selection;
+    state.wire = null;
+    renderCatalog();
+    renderBench();
+  }
+
+  /* ---------- form built from a JSON schema ---------- */
+  function resolveType(def) {
+    if (!def) return 'object';
+    if (def.type) return Array.isArray(def.type) ? def.type.find((t) => t !== 'null') : def.type;
+    if (def.anyOf) return def.anyOf.map(resolveType).find((t) => t && t !== 'null') || 'object';
+    return 'object';
+  }
+
+  function buildForm(schema) {
+    const props = (schema && schema.properties) || {};
+    const required = new Set((schema && schema.required) || []);
+    const controls = [];
+    const wrap = el('div', { class: 'fields' });
+
+    for (const [name, def] of Object.entries(props)) {
+      const type = resolveType(def);
+      const id = 'field-' + name;
+      let input;
+      if (type === 'boolean') input = el('input', { type: 'checkbox', id });
+      else if (type === 'integer' || type === 'number') {
+        input = el('input', { type: 'number', id, step: type === 'integer' ? '1' : 'any',
+                              min: def.minimum, max: def.maximum });
+      } else if (type === 'string') {
+        input = el('input', { type: 'text', id, autocomplete: 'off', spellcheck: 'false' });
+      } else {
+        input = el('textarea', { id, rows: '3', spellcheck: 'false', placeholder: 'JSON value' });
+      }
+      if (def.default !== undefined && def.default !== null) {
+        if (type === 'boolean') input.checked = !!def.default;
+        else input.value = typeof def.default === 'object' ? JSON.stringify(def.default) : String(def.default);
+      }
+
+      const hintParts = [];
+      if (def.description) hintParts.push(def.description);
+      hintParts.push(type);
+      if (def.minimum !== undefined || def.maximum !== undefined) {
+        hintParts.push(`${def.minimum ?? ''} to ${def.maximum ?? ''}`);
+      }
+      const field = el('div', { class: 'field' },
+        type === 'boolean'
+          ? el('div', { class: 'inline' }, input, el('label', { for: id, text: def.title || name }))
+          : [el('label', { for: id }, def.title || name,
+              required.has(name) ? el('span', { class: 'req', text: 'required' }) : null), input],
+        el('p', { class: 'hint', text: hintParts.join(', ') }));
+      wrap.append(field);
+      controls.push({ name, type, input, isRequired: required.has(name) });
+    }
+
+    function collect() {
+      const args = {};
+      let firstError = null;
+      for (const { name, type, input, isRequired } of controls) {
+        input.removeAttribute('aria-invalid');
+        const fail = (message) => { input.setAttribute('aria-invalid', 'true'); firstError ||= `${name}: ${message}`; };
+        if (type === 'boolean') { args[name] = input.checked; continue; }
+        const text = input.value.trim();
+        if (text === '') { if (isRequired) fail('this value is required.'); continue; }
+        if (type === 'integer') {
+          const n = Number(text);
+          if (!Number.isInteger(n)) fail('enter a whole number.'); else args[name] = n;
+        } else if (type === 'number') {
+          const n = Number(text);
+          if (Number.isNaN(n)) fail('enter a number.'); else args[name] = n;
+        } else if (type === 'string') {
+          args[name] = input.value;
+        } else {
+          try { args[name] = JSON.parse(text); } catch { fail('enter valid JSON.'); }
+        }
+      }
+      if (firstError) throw new Error(firstError);
+      return args;
+    }
+    return { node: wrap, collect, empty: controls.length === 0 };
+  }
+
+  /* ---------- bench ---------- */
+  function renderBench() {
+    const bench = document.getElementById('bench');
+    bench.replaceChildren();
+    const sel = state.selected;
+    if (!sel) return renderOverview(bench);
+
+    if (sel.kind === 'tool') {
+      const { item } = sel;
+      const form = buildForm(item.inputSchema);
+      bench.append(
+        el('div', {}, el('h2', { class: 'mono', text: item.name }),
+          el('p', { class: 'muted', text: item.description || 'No description provided.' })),
+        runnable(form, 'Run tool', async (args) => {
+          const call = await rpc('tools/call', { name: item.name, arguments: args });
+          return { call, label: `tools/call ${item.name}` };
+        }, (call) => presentToolResult(call)),
+      );
+    } else if (sel.kind === 'resource') {
+      const { item } = sel;
+      bench.append(
+        el('div', {}, el('h2', { text: item.name || item.uri }),
+          el('p', { class: 'muted', text: item.description || 'No description provided.' }),
+          el('p', { class: 'mono muted', text: item.uri + (item.mimeType ? '  ' + item.mimeType : '') })),
+        runnable({ node: el('div'), collect: () => ({}), empty: true }, 'Read resource', async () => {
+          const call = await rpc('resources/read', { uri: item.uri });
+          return { call, label: `resources/read ${item.uri}` };
+        }, (call) => presentGeneric(call)),
+      );
+    } else {
+      const { item } = sel;
+      const schema = { type: 'object', required: [], properties: {} };
+      for (const arg of item.arguments || []) {
+        schema.properties[arg.name] = { type: 'string', description: arg.description };
+        if (arg.required) schema.required.push(arg.name);
+      }
+      const form = buildForm(schema);
+      bench.append(
+        el('div', {}, el('h2', { class: 'mono', text: item.name }),
+          el('p', { class: 'muted', text: item.description || 'No description provided.' })),
+        runnable(form, 'Get prompt', async (args) => {
+          const call = await rpc('prompts/get', { name: item.name, arguments: args });
+          return { call, label: `prompts/get ${item.name}` };
+        }, (call) => presentGeneric(call)),
+      );
+    }
+    bench.append(renderHistory());
+    refreshHistory();
+    if (state.wire) paintWire();
+  }
+
+  function runnable(form, buttonText, execute, present) {
+    const status = el('p', { class: 'status', role: 'status' });
+    const output = el('div', { id: 'output' });
+    const wire = renderWire();
+    const button = el('button', { type: 'submit', class: 'primary', text: buttonText });
+    const curl = el('button', { type: 'button', text: 'Copy as curl' });
+    let lastRequest = null;
+
+    const container = el('form', {
+      novalidate: true,
+      onsubmit: async (event) => {
+        event.preventDefault();
+        status.className = 'status'; status.textContent = '';
+        let args;
+        try { args = form.collect(); }
+        catch (error) { status.className = 'status err'; status.textContent = error.message; return; }
+
+        button.disabled = true; status.textContent = 'Running';
+        try {
+          const { call, label } = await execute(args);
+          lastRequest = call.request;
+          const outcome = present(call);
+          output.replaceChildren(...outcome.nodes);
+          status.className = 'status ' + (outcome.ok ? 'ok' : 'err');
+          status.textContent = (outcome.ok ? 'Completed' : 'Failed') + ` in ${call.ms} ms`;
+          state.wire = { call };
+          paintWire();
+          state.history.unshift({ label, ok: outcome.ok, ms: call.ms, at: new Date(), call, nodes: outcome.nodes });
+          state.history = state.history.slice(0, 15);
+          refreshHistory();
+        } catch (error) {
+          status.className = 'status err'; status.textContent = error.message;
+        } finally { button.disabled = false; }
+      },
+    },
+      form.empty && form.node.children.length === 0 ? el('p', { class: 'muted', text: 'This takes no input.' }) : form.node,
+      el('div', { class: 'actions' }, button, curl, status));
+
+    curl.addEventListener('click', async () => {
+      const request = lastRequest || { jsonrpc: '2.0', id: 1, method: 'tools/list' };
+      const url = new URL(state.endpoint, location.href).href;
+      const quote = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
+      const text = `curl -X POST ${quote(url)} -H 'Content-Type: application/json' ` +
+                   `-H 'Accept: application/json, text/event-stream' -d ${quote(JSON.stringify(request))}`;
+      try { await navigator.clipboard.writeText(text); curl.textContent = 'Copied'; }
+      catch { curl.textContent = 'Copy failed'; }
+      setTimeout(() => { curl.textContent = 'Copy as curl'; }, 1500);
+    });
+
+    return el('section', {}, container, output, wire);
+  }
+
+  /* ---------- presenting results ---------- */
+  function safeLink(url, text) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return el('a', { href: parsed.href, target: '_blank', rel: 'noopener noreferrer', text });
+      }
+    } catch { /* not a URL */ }
+    return el('span', { text });
+  }
+
+  function presentToolResult(call) {
+    const { message } = call;
+    if (message.error) {
+      return { ok: false, nodes: [errorBanner(`JSON-RPC ${message.error.code}`, message.error.message)] };
+    }
+    const result = message.result || {};
+    let data = result.structuredContent;
+    if (data === undefined) {
+      const text = (result.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+      try { data = JSON.parse(text); } catch { data = text; }
+    }
+    const nodes = [];
+    let ok = !result.isError;
+    if (data && typeof data === 'object' && data.ok === false && data.error) {
+      ok = false;
+      nodes.push(errorBanner(data.error.code, data.error.message));
+    } else if (data && Array.isArray(data.results)) {
+      nodes.push(el('h3', { text: `${data.count ?? data.results.length} results for "${data.query ?? ''}"` }));
+      nodes.push(el('ul', { class: 'hits' }, data.results.map((hit) => el('li', {},
+        el('div', {}, safeLink(hit.url, hit.title || hit.url)),
+        el('div', { class: 'src', text: hit.source || '' }),
+        el('div', { text: hit.snippet || '' })))));
+    } else if (data && typeof data.text === 'string' && data.url) {
+      nodes.push(el('h3', { text: data.title || data.url }));
+      nodes.push(el('p', { class: 'muted' }, safeLink(data.url, data.url),
+        ` (${data.characters} characters${data.truncated ? ', truncated' : ''})`));
+      nodes.push(el('div', { class: 'page-text', text: data.text }));
+    }
+    nodes.push(el('h3', { text: 'Structured result' }), el('pre', { text: pretty(data) }));
+    return { ok, nodes };
+  }
+
+  function presentGeneric(call) {
+    const { message } = call;
+    if (message.error) {
+      return { ok: false, nodes: [errorBanner(`JSON-RPC ${message.error.code}`, message.error.message)] };
+    }
+    return { ok: true, nodes: [el('h3', { text: 'Result' }), el('pre', { text: pretty(message.result) })] };
+  }
+
+  function errorBanner(code, message) {
+    return el('div', { class: 'banner', role: 'alert' }, el('strong', { text: code }), el('p', { text: message }));
+  }
+
+  /* ---------- raw wire view ---------- */
+  function renderWire() {
+    return el('div', { class: 'wire', id: 'wire', hidden: true },
+      el('div', {}, el('h3', { text: 'Sent' }), el('pre', { id: 'wire-sent' })),
+      el('div', {}, el('h3', {}, 'Received', el('span', { class: 'meta', id: 'wire-meta' })),
+        el('pre', { id: 'wire-received' })));
+  }
+  function paintWire() {
+    const wire = document.getElementById('wire');
+    if (!wire || !state.wire) return;
+    const { call } = state.wire;
+    wire.hidden = false;
+    document.getElementById('wire-sent').textContent = pretty(call.request);
+    document.getElementById('wire-received').textContent = pretty(call.message);
+    document.getElementById('wire-meta').textContent = `HTTP ${call.status}, ${call.ms} ms`;
+  }
+
+  /* ---------- history ---------- */
+  function renderHistory() {
+    return el('section', { id: 'history-section' }, el('h3', { text: 'Recent calls' }),
+      el('ul', { class: 'history', id: 'history' }));
+  }
+  function refreshHistory() {
+    const list = document.getElementById('history');
+    if (!list) return;
+    list.replaceChildren();
+    if (!state.history.length) {
+      list.append(el('li', {}, el('p', { class: 'muted', text: 'Calls you run appear here.' })));
+      return;
+    }
+    for (const entry of state.history) {
+      list.append(el('li', {}, el('button', {
+        type: 'button',
+        onclick: () => {
+          state.wire = { call: entry.call };
+          const output = document.getElementById('output');
+          if (output) output.replaceChildren(...entry.nodes.map((n) => n.cloneNode(true)));
+          paintWire();
+        },
+      },
+        el('span', { class: 'when', text: entry.at.toLocaleTimeString() }),
+        el('span', { class: 'label', text: entry.label }),
+        el('span', { class: entry.ok ? 'ok' : 'err', text: entry.ok ? 'ok' : 'failed' }),
+        el('span', { class: 'muted', text: entry.ms + ' ms' }))));
+    }
+  }
+
+  /* ---------- overview ---------- */
+  function renderOverview(bench) {
+    const info = state.info;
+    const serverInfo = (info && info.serverInfo) || {};
+    bench.append(el('div', {},
+      el('h2', { text: serverInfo.name || 'Server overview' }),
+      el('p', { class: 'muted', text: (info && info.instructions) || 'Pick a tool from the list to try it.' })));
+
+    for (const [key, message] of Object.entries(state.errors)) {
+      bench.append(errorBanner(key, message));
+    }
+    bench.append(el('section', {},
+      el('h3', { text: 'What this server exposes' }),
+      el('p', { text: `${state.tools.length} tools, ${state.resources.length} resources, ${state.prompts.length} prompts.` })));
+    if (info) {
+      bench.append(el('section', {}, el('h3', { text: 'Handshake result' }), el('pre', { text: pretty(info) })));
+    }
+    bench.append(renderHistory());
+    refreshHistory();
+  }
+
+  /* ---------- boot ---------- */
+  document.getElementById('endpoint-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    connect();
+  });
+  connect();
+})();
+</script>
+</body>
+</html>

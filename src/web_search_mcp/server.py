@@ -3,12 +3,13 @@
 import argparse
 import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 
 from web_search_mcp.config import Settings, get_settings
 from web_search_mcp.errors import AppError
@@ -16,6 +17,16 @@ from web_search_mcp.services.search_client import SearchClient
 from web_search_mcp.services.webpage_client import WebpageClient
 from web_search_mcp.tools.search import web_search as run_web_search
 from web_search_mcp.tools.webpage import fetch_webpage as run_fetch_webpage
+
+_CONSOLE_PATH = Path(__file__).parent / "static" / "index.html"
+_CONSOLE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
 
 
 def _error_response(error: AppError) -> dict[str, Any]:
@@ -106,6 +117,13 @@ def create_mcp(settings: Settings | None = None) -> FastMCP:
                 "version": resolved_settings.version,
             }
         )
+
+    async def console(_request: Request) -> HTMLResponse:
+        return HTMLResponse(_CONSOLE_PATH.read_text(encoding="utf-8"), headers=_CONSOLE_HEADERS)
+
+    # Served at "/" and also under "/api" for hosts that only route /api/* to this service.
+    mcp.custom_route("/", methods=["GET"])(console)
+    mcp.custom_route("/api/ui", methods=["GET"])(console)
 
     return mcp
 
